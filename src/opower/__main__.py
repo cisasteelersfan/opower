@@ -94,7 +94,9 @@ async def _main() -> None:
         input("2FA secret: ") if select_utility(utility).accepts_mfa() else None
     )
 
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(
+        cookie_jar=aiohttp.CookieJar(unsafe=True)
+    ) as session:
         opower = Opower(session, utility, username, password, mfa_secret)
         await opower.async_login()
         if not args.csv:

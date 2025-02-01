@@ -75,6 +75,7 @@ class DuquesneLight(UtilityBase):
         )
         # DQE uses Incapsula and merely passing the User-Agent is not enough.
         headers = {
+            "Host": "duquesnelight.com",
             "User-Agent": USER_AGENT,
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.5",
@@ -87,25 +88,28 @@ class DuquesneLight(UtilityBase):
             "Sec-Fetch-User": "?1",
             "Cache-Control": "max-age=0",
         }
-
-        async with session.post(
-            "https://www.duquesnelight.com/login/login",
-            data={
-                "Phone": "",
-                "Email": "",
-                "IsLoginOff": "false",
-                "RedFlagPassword": "",
-                "RememberUsername": "false",
-                "Username": username,
-                "Password": password,
-                "RedirectUrl": "/my-account/account-summary",
-                "SuppressPleaseLoginMessage": "true",
-                "LoginTurnedOffMessage": "",
-                "RedirectPath": "",
-                "PersonId": "",
-            },
+        authHeaders = headers.copy()
+        authHeaders["Host"] = "auth.duquesnelight.com"
+        async with session.get(
+            "https://104.45.129.178/",
             headers=headers,
             raise_for_status=True,
+            ssl=False,
+        ) as resp:
+            if "invalid" in await resp.text():
+                raise InvalidAuth("Login failed")
+
+        async with session.post(
+            "https://104.45.129.178/oauth/authorize/login",
+            json={
+                "grant_type": "password",
+                "username": username,
+                "password": password,
+                "remember_username": False,
+            },
+            headers=authHeaders,
+            raise_for_status=True,
+            ssl=False,
         ) as resp:
             # Check for failed login - DQE returns status 200 with a json body that can be parsed.
             if "invalid" in await resp.text():
@@ -114,9 +118,31 @@ class DuquesneLight(UtilityBase):
         usage_parser = DQEUsageParser()
 
         async with session.get(
-            "https://www.duquesnelight.com/energy-money-savings/my-electric-use",
+            "https://104.45.129.178/oauth/authorize?client_id=33292caf-08ce-4631-a7a1-7bc3e30d318c&response_type=code&redirect_uri=https:%2F%2Fduquesnelight.com%2Fdlc%2Flogin%3FredirectUrl%3D%252faccount-billing%252faccount-summary",
+            headers=authHeaders,
+            ssl=False,
+            raise_for_status=True,
+            allow_redirects=False,
+        ) as resp:
+            redirect = resp.headers["Location"].replace(
+                "duquesnelight.com", "104.45.129.178"
+            )
+
+        async with session.get(
+            redirect,
+            headers=headers,
+            ssl=False,
+            raise_for_status=True,
+            allow_redirects=False,
+        ) as resp:
+            if "invalid" in await resp.text():
+                raise InvalidAuth("Login failed")
+
+        async with session.get(
+            "https://104.45.129.178/energy-money-savings/my-electric-use",
             headers=headers,
             raise_for_status=True,
+            ssl=False,
         ) as resp:
             usage_parser.feed(await resp.text())
 
